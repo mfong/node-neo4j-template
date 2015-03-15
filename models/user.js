@@ -19,22 +19,32 @@ var User = module.exports = function User(_node) {
 // public instance properties:
 
 Object.defineProperty(User.prototype, 'id', {
-    get: function () { return this._node.id; }
+    get: function () { return this._node._id; }
 });
 
 Object.defineProperty(User.prototype, 'name', {
     get: function () {
-        return this._node.data['name'];
-    },
-    set: function (name) {
-        this._node.data['name'] = name;
+        return this._node.properties['name'];
     }
 });
 
 // public instance methods:
 
-User.prototype.save = function (callback) {
-    this._node.save(function (err) {
+User.prototype.save = function (data, callback) {
+    var qp = {
+        query: [
+            'MATCH (user:User)',
+            'WHERE id(user) = {userId}',
+            'SET user.name = {userName}',
+            'RETURN user',
+        ].join('\n'),
+        params: {
+            userId: data.id,
+            userName: data.name
+        }
+    }
+
+    db.cypher(qp, function (err) {
         callback(err);
     });
 };
@@ -44,43 +54,58 @@ User.prototype.del = function (callback) {
     // relationships in one transaction and one network request:
     // (note that this'll still fail if there are any relationships attached
     // of any other types, which is good because we don't expect any.)
-    var query = [
-        'MATCH (user:User)',
-        'WHERE ID(user) = {userId}',
-        'DELETE user',
-        'WITH user',
-        'MATCH (user) -[rel:follows]- (other)',
-        'DELETE rel',
-    ].join('\n')
+    var qp = {
+        query: [
+            'MATCH (user:User)',
+            'WHERE ID(user) = {userId}',
+            'DELETE user',
+            'WITH user',
+            'MATCH (user) -[rel:follows]- (other)',
+            'DELETE rel',
+        ].join('\n'),
+        params: {
+            userId: this.id
+        }
+    }
 
-    var params = {
-        userId: this.id
-    };
-
-    db.query(query, params, function (err) {
+    db.cypher(qp, function (err) {
         callback(err);
     });
 };
 
 User.prototype.follow = function (other, callback) {
-    this._node.createRelationshipTo(other._node, 'follows', {}, function (err, rel) {
+    var qp = {
+        query: [
+            'MATCH (user:User),(other:User)',
+            'WHERE ID(user) = {userId} AND ID(other) = {otherId}',
+            'CREATE (user)-[rel:follows]->(other)',
+            'RETURN rel'
+        ].join('\n'),
+        params: {
+            userId: this.id,
+            otherId: other.id
+        }
+    }
+
+    db.cypher(qp, function (err) {
         callback(err);
     });
 };
 
 User.prototype.unfollow = function (other, callback) {
-    var query = [
-        'MATCH (user:User) -[rel:follows]-> (other:User)',
-        'WHERE ID(user) = {userId} AND ID(other) = {otherId}',
-        'DELETE rel',
-    ].join('\n')
+    var qp = {
+        query: [
+            'MATCH (user:User) -[rel:follows]-> (other:User)',
+            'WHERE ID(user) = {userId} AND ID(other) = {otherId}',
+            'DELETE rel',
+        ].join('\n'),
+        params: {
+            userId: this.id,
+            otherId: other.id
+        }
+    }
 
-    var params = {
-        userId: this.id,
-        otherId: other.id,
-    };
-
-    db.query(query, params, function (err) {
+    db.cypher(qp, function (err) {
         callback(err);
     });
 };
@@ -89,25 +114,27 @@ User.prototype.unfollow = function (other, callback) {
 // users this user follows, and others is all other users minus him/herself.
 User.prototype.getFollowingAndOthers = function (callback) {
     // query all users and whether we follow each one or not:
-    var query = [
-        'MATCH (user:User), (other:User)',
-        'OPTIONAL MATCH (user) -[rel:follows]-> (other)',
-        'WHERE ID(user) = {userId}',
-        'RETURN other, COUNT(rel)', // COUNT(rel) is a hack for 1 or 0
-    ].join('\n')
-
-    var params = {
-        userId: this.id,
-    };
+    var qp = {
+        query: [
+            'MATCH (user:User), (other:User)',
+            'OPTIONAL MATCH (user) -[rel:follows]-> (other)',
+            'WHERE ID(user) = {userId}',
+            'RETURN other, COUNT(rel)', // COUNT(rel) is a hack for 1 or 0
+        ].join('\n'),
+        params: {
+            userId: this.id
+        }
+    }
 
     var user = this;
-    db.query(query, params, function (err, results) {
+    db.cypher(qp, function (err, results) {
         if (err) return callback(err);
 
         var following = [];
         var others = [];
 
         for (var i = 0; i < results.length; i++) {
+            console.log(results[i]);
             var other = new User(results[i]['other']);
             var follows = results[i]['COUNT(rel)'];
 
@@ -127,47 +154,62 @@ User.prototype.getFollowingAndOthers = function (callback) {
 // static methods:
 
 User.get = function (id, callback) {
-    db.getNodeById(id, function (err, node) {
+    var qp = {
+        query: [
+            'MATCH (user:User)',
+            'WHERE ID(user) = {userId}',
+            'RETURN user',
+        ].join('\n'),
+        params: {
+            userId: parseInt(id)
+        }
+    }
+
+    db.cypher(qp, function (err, result) {
         if (err) return callback(err);
-        callback(null, new User(node));
+        var user = new User(result[0]['user']);
+        callback(null, user);
     });
 };
 
 User.getAll = function (callback) {
-    var query = [
-        'MATCH (user:User)',
-        'RETURN user',
-    ].join('\n');
+    var qp = {
+        query: [
+            'MATCH (user:User)',
+            'RETURN user',
+        ].join('\n')
+    }
 
-    db.query(query, null, function (err, results) {
+    db.cypher(qp, function (err, results) {
         if (err) return callback(err);
         var users = results.map(function (result) {
             return new User(result['user']);
         });
         callback(null, users);
     });
-};
+}
 
 // creates the user and persists (saves) it to the db, incl. indexing it:
 User.create = function (data, callback) {
     // construct a new instance of our class with the data, so it can
     // validate and extend it, etc., if we choose to do that in the future:
-    var node = db.createNode(data);
-    var user = new User(node);
+    //var node = db.createNode(data);
+    //var user = new User(node);
 
     // but we do the actual persisting with a Cypher query, so we can also
     // apply a label at the same time. (the save() method doesn't support
     // that, since it uses Neo4j's REST API, which doesn't support that.)
-    var query = [
-        'CREATE (user:User {data})',
-        'RETURN user',
-    ].join('\n');
+    var qp = {
+        query: [
+            'CREATE (user:User {data})',
+            'RETURN user',
+        ].join('\n'),
+        params: {
+            data: data
+        }
+    }
 
-    var params = {
-        data: data
-    };
-
-    db.query(query, params, function (err, results) {
+    db.cypher(qp, function (err, results) {
         if (err) return callback(err);
         var user = new User(results[0]['user']);
         callback(null, user);

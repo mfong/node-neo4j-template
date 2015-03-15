@@ -9,7 +9,7 @@ var User = require('../models/user');
 exports.list = function (req, res, next) {
     User.getAll(function (err, users) {
         if (err) return next(err);
-        res.render('users', {
+        res.render('pages/users', {
             users: users
         });
     });
@@ -36,12 +36,15 @@ exports.show = function (req, res, next) {
         // TODO also fetch and show followers? (not just follow*ing*)
         user.getFollowingAndOthers(function (err, following, others) {
             if (err) return next(err);
-            res.render('user', {
+            res.render('pages/user', {
                 user: user,
                 following: following,
                 others: others
             });
         });
+    /*res.render('pages/user', {
+                user: user
+            });*/
     });
 };
 
@@ -52,7 +55,7 @@ exports.edit = function (req, res, next) {
     User.get(req.params.id, function (err, user) {
         if (err) return next(err);
         user.name = req.body['name'];
-        user.save(function (err) {
+        user.save(user, function (err) {
             if (err) return next(err);
             res.redirect('/users/' + user.id);
         });

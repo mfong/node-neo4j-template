@@ -1,3 +1,6 @@
+updated the template to use express 4 as well as node4j v2
+swapped out node for ejs and bootstrap for materialize
+
 # Node-Neo4j Template
 
 This is a template [Node.js][] + [Neo4j][] app, using the
