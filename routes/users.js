@@ -42,9 +42,6 @@ exports.show = function (req, res, next) {
                 others: others
             });
         });
-    /*res.render('pages/user', {
-                user: user
-            });*/
     });
 };
 

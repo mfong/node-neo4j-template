@@ -7,6 +7,7 @@ var db = new neo4j.GraphDatabase(
     process.env['GRAPHENEDB_URL'] ||
     'http://localhost:7474'
 );
+var bcrypt   = require('bcrypt-nodejs');
 
 // private constructor:
 
@@ -134,7 +135,6 @@ User.prototype.getFollowingAndOthers = function (callback) {
         var others = [];
 
         for (var i = 0; i < results.length; i++) {
-            console.log(results[i]);
             var other = new User(results[i]['other']);
             var follows = results[i]['COUNT(rel)'];
 
@@ -154,6 +154,7 @@ User.prototype.getFollowingAndOthers = function (callback) {
 // static methods:
 
 User.get = function (id, callback) {
+    console.log('User.get id: ' + id);
     var qp = {
         query: [
             'MATCH (user:User)',
@@ -166,11 +167,42 @@ User.get = function (id, callback) {
     }
 
     db.cypher(qp, function (err, result) {
+        console.log(result);
         if (err) return callback(err);
-        var user = new User(result[0]['user']);
-        callback(null, user);
+        //var user = new User(result[0]['user']);
+        callback(null, result[0]['user']);
     });
 };
+
+User.getBy = function (field, value, callback) {
+    console.log('User.getBy field:' + field + ' value: ' + value);
+    console.log(value);
+    var qp = {
+        query: [
+            'MATCH (user:User)',
+            'WHERE user.email = {value}',
+            'RETURN user',
+        ].join('\n'),
+        params: {
+            field: field,
+            value: value
+        }
+    }
+
+    db.cypher(qp, function (err, result) {
+        console.log('result: ');
+        console.log(result);
+        if (err) return callback(err);
+        if (!result[0]) {
+            callback(null, null);
+        } else {
+            var user = new User(result[0]['user']);
+            console.log('user: ');
+            console.log(user);
+            callback(null, user);
+        }
+    });
+}
 
 User.getAll = function (callback) {
     var qp = {
@@ -191,6 +223,7 @@ User.getAll = function (callback) {
 
 // creates the user and persists (saves) it to the db, incl. indexing it:
 User.create = function (data, callback) {
+    console.log('User.create');
     // construct a new instance of our class with the data, so it can
     // validate and extend it, etc., if we choose to do that in the future:
     //var node = db.createNode(data);
@@ -211,7 +244,21 @@ User.create = function (data, callback) {
 
     db.cypher(qp, function (err, results) {
         if (err) return callback(err);
-        var user = new User(results[0]['user']);
-        callback(null, user);
+        console.log('results');
+        console.log(results);
+        console.log('results[0][user]');
+        console.log(results[0]['user']);
+        //var user = new User(results[0]['user']);
+        callback(null, results[0]['user']);
     });
+};
+
+// generating a hash
+User.generateHash = function(password, next) {
+    return bcrypt.hashSync(password, bcrypt.genSaltSync(8), null, next);
+};
+
+// checking if password is valid
+User.validPassword = function(password, pass, next) {
+    return bcrypt.compareSync(password, pass, next);
 };
